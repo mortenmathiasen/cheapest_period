@@ -1,0 +1,42 @@
+{%- macro CheapestPeriod(earliestTimestamp, latestTimestamp, durationTimedelta, findLastPeriodBoolean) -%}
+
+{# Prepare input parameters #}
+{%- set durationMinutes = durationTimedelta.total_seconds() // 60 | int -%}
+{%- set durationHours = "%.0f"|format((durationMinutes+30) // 60 | round | float) | int -%}
+
+{# Retrieve energy prices #}
+{%- set energyPrice = "sensor.energi_data_service" -%}
+{%- set today = state_attr(energyPrice, 'raw_today') -%}
+{%- set tomorrow = state_attr(energyPrice, 'raw_tomorrow') -%}
+{%- set forecast = state_attr(energyPrice, 'forecast') -%}
+{%- set prices = (today if today else []) + (tomorrow if tomorrow else []) + (forecast if forecast else []) -%}
+
+{# Calculate cheapest period #}
+{%- set result = namespace(priceSum=999999, priceStartTimestamp=None) -%}
+{%- set prices_len = (prices | length) - durationHours | int -%}
+{%- for n in range(prices_len) -%}
+  {%- set priceStartTimestamp = (prices[n].hour).timestamp() -%}
+  {%- if earliestTimestamp <= priceStartTimestamp and priceStartTimestamp <= latestTimestamp -%}
+    {%- set priceSum = namespace(value=0) -%}
+    {%- for i in range(durationHours) -%}
+      {%- set priceSum.value = priceSum.value + prices[n+i].price -%}
+    {%- endfor -%}
+    {%- if priceSum.value<result.priceSum or (findLastPeriodBoolean and priceSum.value<=result.priceSum) -%}
+      {%- set result.priceSum = priceSum.value -%}
+      {%- set result.priceStartTimestamp = priceStartTimestamp -%}
+    {%- endif -%}
+  {%- endif -%}
+{%- endfor -%}
+
+{# Output result #}
+{{ result.priceStartTimestamp + (durationHours*60-durationMinutes)*30 }}
+
+{%- endmacro -%}
+
+{%- macro lastCheapestPeriod(earliestTimestamp, latestTimestamp, durationTimedelta) -%}
+{{ CheapestPeriod(earliestTimestamp, latestTimestamp, durationTimedelta, true) }}
+{%- endmacro -%}
+
+{%- macro firstCheapestPeriod(earliestTimestamp, latestTimestamp, durationTimedelta) -%}
+{{ CheapestPeriod(earliestTimestamp, latestTimestamp, durationTimedelta, false) }}
+{%- endmacro -%}
